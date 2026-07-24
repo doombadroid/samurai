@@ -1,0 +1,62 @@
+name: track-upstream
+on:
+  schedule: [{cron: "23 6 * * *"}]
+  workflow_dispatch: {}
+permissions: {contents: write, issues: write}
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find newest upstream release + our state
+        id: vers
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          up=$(gh api repos/CachyOS/linux/releases/latest --jq .tag_name)      # cachyos-7.1.4-1
+          ours=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name)  # samurai-7.1.3-1
+          new="samurai-${up#cachyos-}"
+          echo "up=$up"       >> "$GITHUB_OUTPUT"
+          echo "ours=$ours"   >> "$GITHUB_OUTPUT"
+          echo "new=$new"     >> "$GITHUB_OUTPUT"
+          [ "$new" = "$ours" ] && echo "skip=1" >> "$GITHUB_OUTPUT" || echo "skip=0" >> "$GITHUB_OUTPUT"
+      - name: Checkout (filtered)
+        if: steps.vers.outputs.skip == '0'
+        uses: actions/checkout@v4
+        with: {filter: "blob:none", fetch-depth: 0}
+      - name: Build new samurai branch
+        if: steps.vers.outputs.skip == '0'
+        id: build
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          set -e
+          UP=${{ steps.vers.outputs.up }}; OURS=${{ steps.vers.outputs.ours }}; NEW=${{ steps.vers.outputs.new }}
+          VER=${UP#cachyos-}; VER=${VER%-*}
+          git config user.name samurai-bot; git config user.email samurai-bot@users.noreply.github.com
+          git remote add upstream https://github.com/CachyOS/linux
+          git fetch upstream tag "$UP" --no-tags
+          git fetch origin tag "$OURS" --no-tags
+          git checkout -b "samurai/${NEW#samurai-}" "$UP"
+          # 1) bore patch for the new version, from the overlay that curates it
+          curl -fsSL "https://raw.githubusercontent.com/Szowisz/CachyOS-kernels/master/sys-kernel/cachyos-sources/files/$VER/sched/0001-bore-cachy.patch" | git apply
+          git add -A && git commit -m "samurai: sched: apply bore-cachy patch ($VER)" -m "Samurai-Commit: sched"
+          # 2+3) cherry-pick ryzen_smu + branding from previous samurai tag
+          for c in $(git log --reverse --format=%H --grep 'Samurai-Commit: ryzen_smu' --grep 'Samurai-Commit: branding' "$UP".."$OURS"); do
+            git cherry-pick "$c"
+          done
+          # 4) refresh config commit: previous defconfig+manifest, olddefconfig for new options
+          prevcfg=$(git log --format=%H --grep 'Samurai-Commit: config' "$UP".."$OURS" | head -1)
+          git checkout "$prevcfg" -- samurai/
+          cp samurai/samurai_defconfig .config
+          make olddefconfig
+          cp .config samurai/samurai_defconfig
+          git add samurai/ && git commit -m "samurai: refresh machine config for $VER" -m "Samurai-Commit: config"
+          git tag "$NEW"
+          git push origin "samurai/${NEW#samurai-}" "$NEW"
+          git archive --format=tar.gz --prefix="$NEW/" -o "/tmp/$NEW.tar.gz" "$NEW"
+          gh release create "$NEW" "/tmp/$NEW.tar.gz" --title "$NEW" --notes "Auto-tracked from $UP"
+      - name: Open issue on failure
+        if: failure()
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          gh issue create --repo "${{ github.repository }}" \
+            --title "track-upstream failed for ${{ steps.vers.outputs.up }}" \
+            --body "Auto-rebase to ${{ steps.vers.outputs.new }} failed — manual rebase needed. See run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
