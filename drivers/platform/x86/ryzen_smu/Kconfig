@@ -1,0 +1,7 @@
+config RYZEN_SMU
+	tristate "AMD Ryzen SMU driver (ryzen_smu)"
+	depends on X86_64 && PCI
+	help
+	  Exposes the AMD System Management Unit mailbox and PM table of
+	  Ryzen SoCs under /sys/kernel/ryzen_smu_drv/. Needed by ryzenadj
+	  monitoring. Vendored out-of-tree driver (samurai kernel).
