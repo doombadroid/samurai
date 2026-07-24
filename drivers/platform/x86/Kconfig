@@ -1062,6 +1062,8 @@ config OXP_EC
 
 source "drivers/platform/x86/tuxedo/Kconfig"
 
+source "drivers/platform/x86/ryzen_smu/Kconfig"
+
 endif # X86_PLATFORM_DEVICES
 
 config P2SB
