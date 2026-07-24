@@ -36,7 +36,7 @@ jobs:
           git fetch origin tag "$OURS" --no-tags
           git checkout -b "samurai/${NEW#samurai-}" "$UP"
           # 1) bore patch for the new version, from the overlay that curates it
-          curl -fsSL "https://raw.githubusercontent.com/Szowisz/CachyOS-kernels/master/sys-kernel/cachyos-sources/files/$VER/sched/0001-bore-cachy.patch" | git apply
+          curl -fsSL --retry 4 --retry-all-errors --retry-delay 15 "https://raw.githubusercontent.com/Szowisz/CachyOS-kernels/master/sys-kernel/cachyos-sources/files/$VER/sched/0001-bore-cachy.patch" | git apply
           git add -A && git commit -m "samurai: sched: apply bore-cachy patch ($VER)" -m "Samurai-Commit: sched"
           # 2+3) cherry-pick ryzen_smu + branding from previous samurai tag
           for c in $(git log --reverse --format=%H --grep 'Samurai-Commit: ryzen_smu' --grep 'Samurai-Commit: branding' "$UP".."$OURS"); do
