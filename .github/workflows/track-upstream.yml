@@ -52,7 +52,7 @@ jobs:
           git tag "$NEW"
           git push origin "samurai/${NEW#samurai-}" "$NEW"
           git archive --format=tar.gz --prefix="$NEW/" -o "/tmp/$NEW.tar.gz" "$NEW"
-          gh release create "$NEW" "/tmp/$NEW.tar.gz" --title "$NEW" --notes "Auto-tracked from $UP"
+          gh release create "$NEW" "/tmp/$NEW.tar.gz" --repo "${{ github.repository }}" --title "$NEW" --notes "Auto-tracked from $UP"
       - name: Open issue on failure
         if: failure()
         env: {GH_TOKEN: "${{ github.token }}"}
