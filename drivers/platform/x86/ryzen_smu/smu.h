@@ -27,9 +27,9 @@
 #define SMU_RETRIES_MAX                               32768
 #define SMU_RETRIES_MIN                               500
 
-/* PCI Query Registers. [0x60, 0x64] & [0xB4, 0xB8] also work. These may be arch-specific. */
-#define SMU_PCI_ADDR_REG                              0xC4
-#define SMU_PCI_DATA_REG                              0xC8
+/* SMN access goes through the kernel's amd_smn_read/amd_smn_write (asm/amd/node.h);
+ * never raw config-space index/data pokes — 0xC4/0xC8 is the HSMP aperture on
+ * family 0x1Ah and misroutes on client parts (Strix Halo). */
 
 /* Maximum number of 32-bit arguments an SMU command shall have. */
 #define SMU_REQ_MAX_ARGS                              6
