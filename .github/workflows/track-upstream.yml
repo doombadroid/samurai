@@ -14,7 +14,9 @@ jobs:
           # Highest cachyos-* release by version sort — NOT releases/latest, which
           # means "most recently published" and flips to LTS-branch releases
           # (e.g. a 6.18.x published after 7.1.x).
-          up=$(gh api 'repos/CachyOS/linux/releases?per_page=30' --jq '.[].tag_name' | grep '^cachyos-' | sort -V | tail -1)
+          # Stable line only: RCs exist upstream (cachyos-7.2-rc4-*) but the
+          # overlay never packages them — chasing them stalls stable tracking.
+          up=$(gh api 'repos/CachyOS/linux/releases?per_page=30' --jq '.[].tag_name' | grep '^cachyos-' | grep -vE -- '-rc[0-9]' | sort -V | tail -1)
           ours=$(gh api "repos/${{ github.repository }}/releases?per_page=30" --jq '.[].tag_name' | grep '^samurai-' | sort -V | tail -1)
           new="samurai-${up#cachyos-}"
           ver=${up#cachyos-}; ver=${ver%-*}
