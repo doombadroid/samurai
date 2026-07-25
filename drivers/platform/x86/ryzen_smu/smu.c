@@ -2,6 +2,7 @@
 /* Copyright (C) 2020 Leonardo Gates <leogatesx9r@protonmail.com> */
 /* Ryzen SMU Root Complex Communication */
 
+#include <asm/amd/node.h>
 #include <asm/io.h>
 #include <linux/delay.h>
 #include <linux/module.h>
@@ -67,30 +68,27 @@ static struct {
     .pm_table_virt_addr_alt = NULL,
 };
 
-// Both mutexes are defined separately because the SMN address space can be used
-//  independently from the SMU but the SMU requires access to the SMN to execute
-//  commands.
-static DEFINE_MUTEX(amd_pci_mutex);
+// Serializes SMU mailbox transactions; SMN word access itself is locked
+//  inside the kernel's amd_smn_read/amd_smn_write helpers.
 static DEFINE_MUTEX(amd_smu_mutex);
 
 int smu_smn_rw_address(struct pci_dev *dev, u32 address, u32 *value,
                        int write) {
   int err;
 
-  // This may work differently for multi-NUMA systems.
-  mutex_lock(&amd_pci_mutex);
-  err = pci_write_config_dword(dev, SMU_PCI_ADDR_REG, address);
-
-  if (!err) {
-    err = (write ? pci_write_config_dword(dev, SMU_PCI_DATA_REG, *value)
-                 : pci_read_config_dword(dev, SMU_PCI_DATA_REG, value));
-
-    if (err)
-      pr_warn("Error %s SMN address: 0x%x!\n", write ? "writing" : "reading",
-              address);
-  } else
-    pr_warn("Error programming SMN address: 0x%x!\n", address);
-  mutex_unlock(&amd_pci_mutex);
+  /*
+   * Use the kernel's family-aware SMN accessors (index/data pair 0x60/0x64
+   * on the node's D18F0, with proper locking). The raw 0xC4/0xC8 config
+   * pair this driver historically used is the HSMP aperture on family
+   * 0x1Ah (see arch/x86/kernel/amd_node.c) — on Strix Halo it misroutes:
+   * reads echo written values (probe saw "version" == the 0x1 written in)
+   * and stray writes through it can wedge PMFW GPU DPM until reboot.
+   */
+  err = write ? amd_smn_write(0, address, *value)
+              : amd_smn_read(0, address, value);
+  if (err)
+    pr_warn("Error %s SMN address 0x%x: %d\n", write ? "writing" : "reading",
+            address, err);
 
   return err;
 }
