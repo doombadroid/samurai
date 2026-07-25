@@ -11,13 +11,24 @@ jobs:
         id: vers
         env: {GH_TOKEN: "${{ github.token }}"}
         run: |
-          up=$(gh api repos/CachyOS/linux/releases/latest --jq .tag_name)      # cachyos-7.1.4-1
-          ours=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name)  # samurai-7.1.3-1
+          # Highest cachyos-* release by version sort — NOT releases/latest, which
+          # means "most recently published" and flips to LTS-branch releases
+          # (e.g. a 6.18.x published after 7.1.x).
+          up=$(gh api 'repos/CachyOS/linux/releases?per_page=30' --jq '.[].tag_name' | grep '^cachyos-' | sort -V | tail -1)
+          ours=$(gh api "repos/${{ github.repository }}/releases?per_page=30" --jq '.[].tag_name' | grep '^samurai-' | sort -V | tail -1)
           new="samurai-${up#cachyos-}"
+          ver=${up#cachyos-}; ver=${ver%-*}
           echo "up=$up"       >> "$GITHUB_OUTPUT"
           echo "ours=$ours"   >> "$GITHUB_OUTPUT"
           echo "new=$new"     >> "$GITHUB_OUTPUT"
-          [ "$new" = "$ours" ] && echo "skip=1" >> "$GITHUB_OUTPUT" || echo "skip=0" >> "$GITHUB_OUTPUT"
+          if [ "$new" = "$ours" ]; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"; echo "up to date ($ours)"
+          elif ! curl -fsIL "https://raw.githubusercontent.com/Szowisz/CachyOS-kernels/master/sys-kernel/cachyos-sources/files/$ver/sched/0001-bore-cachy.patch" >/dev/null 2>&1; then
+            # Overlay hasn't packaged this version yet — wait quietly, no failure/issue.
+            echo "skip=1" >> "$GITHUB_OUTPUT"; echo "overlay not ready for $ver, waiting"
+          else
+            echo "skip=0" >> "$GITHUB_OUTPUT"
+          fi
       - name: Checkout (filtered)
         if: steps.vers.outputs.skip == '0'
         uses: actions/checkout@v4
