@@ -55,6 +55,17 @@ jobs:
           for c in $(git log --reverse --format=%H --grep 'Samurai-Commit: ryzen_smu' --grep 'Samurai-Commit: branding' "$UP".."$OURS"); do
             git cherry-pick "$c"
           done
+          # 3b) carried revert (rule): AirDrop on the MT7925 needs mt792x to advertise
+          #     active monitor; upstream 6f6c9800e54c (7.3) stopped that. Revert it on
+          #     every branch whose base has it, and fail (-> issue) if it survives.
+          F=drivers/net/wireless/mediatek/mt76/mt792x_core.c
+          if grep -q no_active_monitor "$F"; then
+            git revert --no-commit 6f6c9800e54cc7a9c5530797892b8b877335cf3c
+            git commit -m "samurai: revert: mt792x active monitor (AirDrop needs it)" \
+              -m "This reverts upstream commit 6f6c9800e54cc7a9c5530797892b8b877335cf3c." \
+              -m "Samurai-Commit: revert"
+          fi
+          if grep -q no_active_monitor "$F"; then echo "mt792x active-monitor revert did not take"; exit 1; fi
           # 4) refresh config commit: previous defconfig+manifest, olddefconfig for new options
           prevcfg=$(git log --format=%H --grep 'Samurai-Commit: config' "$UP".."$OURS" | head -1)
           git checkout "$prevcfg" -- samurai/
