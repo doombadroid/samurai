@@ -23,9 +23,18 @@ jobs:
           echo "up=$up"       >> "$GITHUB_OUTPUT"
           echo "ours=$ours"   >> "$GITHUB_OUTPUT"
           echo "new=$new"     >> "$GITHUB_OUTPUT"
+          # BORE = the patch the overlay's newest cachyos-sources-$ver ebuild pins
+          # (CachyOS/kernel-patches @ CACHYOS_PATCHES_COMMIT); since 7.2 the overlay
+          # no longer ships files/<ver>/sched/ itself.
+          OV=https://raw.githubusercontent.com/Szowisz/CachyOS-kernels/master/sys-kernel/cachyos-sources
+          eb=$(gh api repos/Szowisz/CachyOS-kernels/contents/sys-kernel/cachyos-sources --jq '.[].name' |
+               sed -n "s/^\(cachyos-sources-${ver//./\\.}\(-r[0-9]*\)\?\)\.ebuild$/\1/p" | sort -V | tail -1)
+          pc=$([ -n "$eb" ] && curl -fsSL "$OV/$eb.ebuild" | sed -n 's/^CACHYOS_PATCHES_COMMIT="\([0-9a-f]\{40\}\)"$/\1/p' || true)
+          bore="https://github.com/CachyOS/kernel-patches/raw/$pc/$(echo "$ver" | cut -d. -f1-2)/sched/0001-bore-cachy.patch"
+          echo "bore=$bore"   >> "$GITHUB_OUTPUT"
           if [ "$new" = "$ours" ]; then
             echo "skip=1" >> "$GITHUB_OUTPUT"; echo "up to date ($ours)"
-          elif ! curl -fsIL "https://raw.githubusercontent.com/Szowisz/CachyOS-kernels/master/sys-kernel/cachyos-sources/files/$ver/sched/0001-bore-cachy.patch" >/dev/null 2>&1; then
+          elif [ -z "$pc" ] || ! curl -fsIL "$bore" >/dev/null 2>&1; then
             # Overlay hasn't packaged this version yet — wait quietly, no failure/issue.
             echo "skip=1" >> "$GITHUB_OUTPUT"; echo "overlay not ready for $ver, waiting"
           else
@@ -48,9 +57,13 @@ jobs:
           git fetch upstream tag "$UP" --no-tags
           git fetch origin tag "$OURS" --no-tags
           git checkout -b "samurai/${NEW#samurai-}" "$UP"
-          # 1) bore patch for the new version, from the overlay that curates it
-          curl -fsSL --retry 4 --retry-all-errors --retry-delay 15 "https://raw.githubusercontent.com/Szowisz/CachyOS-kernels/master/sys-kernel/cachyos-sources/files/$VER/sched/0001-bore-cachy.patch" | git apply
-          git add -A && git commit -m "samurai: sched: apply bore-cachy patch ($VER)" -m "Samurai-Commit: sched"
+          # 1) bore patch pinned by the overlay, applied the way Portage's eapply does
+          #    (GNU patch, fuzz 2): the 7.2 sched.h hunk only applies with fuzz, so
+          #    git apply rejected 7.2.0. Rejects still fail the step.
+          BORE=${{ steps.vers.outputs.bore }}
+          curl -fsSL --retry 4 --retry-all-errors --retry-delay 15 -o /tmp/bore.patch "$BORE"
+          patch -p1 -f -g0 --no-backup-if-mismatch < /tmp/bore.patch
+          git add -A && git commit -m "samurai: sched: apply bore-cachy patch ($VER)" -m "Source: $BORE" -m "Samurai-Commit: sched"
           # 2+3) cherry-pick ryzen_smu + branding from previous samurai tag
           for c in $(git log --reverse --format=%H --grep 'Samurai-Commit: ryzen_smu' --grep 'Samurai-Commit: branding' "$UP".."$OURS"); do
             git cherry-pick "$c"
