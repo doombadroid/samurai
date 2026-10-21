@@ -3,6 +3,7 @@
 /* Ryzen SMU Root Complex Communication */
 
 #include <asm/amd/node.h>
+#include <asm/cpuid/api.h>
 #include <asm/io.h>
 #include <linux/delay.h>
 #include <linux/module.h>
